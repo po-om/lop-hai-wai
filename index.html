@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>หลบให้ไว!</title>
+  <style>
+    :root{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    html,body{height:100%;margin:0;display:flex;align-items:center;justify-content:center;background:#111}
+    #gameWrap{width:420px;max-width:95vw;background:#0f1720;padding:12px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+    canvas{display:block;background:linear-gradient(#0b1220,#081018);border-radius:6px;width:100%;height:600px}
+    .ui{color:#dbeafe;font-size:14px;margin-top:8px;display:flex;justify-content:space-between;align-items:center}
+    button{background:#2563eb;border:none;padding:6px 10px;border-radius:6px;color:white;cursor:pointer}
+    button:hover{opacity:.95}
+    .hint{opacity:.8;font-size:13px}
+  </style>
+</head>
+<body>
+  <div id="gameWrap">
+    <canvas id="game" width="420" height="600"></canvas>
+    <div class="ui">
+      <div>คะแนน: <span id="score">0</span></div>
+      <div class="hint">ลากหรือแตะเพื่อเลื่อนตัวละคร</div>
+      <div><button id="restart">เริ่มใหม่</button></div>
+    </div>
+  </div>
+
+  <script>
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const restartBtn = document.getElementById('restart');
+
+  const W = canvas.width; const H = canvas.height;
+
+  const player = {
+    x: W/2,
+    y: H - 60,
+    w: 80,
+    h: 24,
+    color: '#34d399',
+    dragging: false,
+    targetX: W/2
+  };
+
+  let obstacles = [];
+  let spawnInterval = 1000;
+  let lastSpawn = 0;
+  let lastTime = 0;
+  let score = 0;
+  let speedMult = 1;
+  let gameOver = false;
+
+  function spawnObstacle(){
+    const size = 18 + Math.random()*28;
+    const x = Math.random()*(W - size) + size/2;
+    const type = Math.random() < 0.5 ? 'circle' : 'square';
+    obstacles.push({x, y:-size, size, type, speed: 80 + Math.random()*120});
+  }
+
+  function reset(){
+    obstacles = [];
+    spawnInterval = 1000;
+    lastSpawn = 0;
+    lastTime = performance.now();
+    score = 0;
+    speedMult = 1;
+    gameOver = false;
+    player.x = W/2; player.targetX = player.x;
+    scoreEl.textContent = score;
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt){
+    if (gameOver) return;
+    lastSpawn += dt;
+    if (lastSpawn > spawnInterval){
+      spawnObstacle();
+      lastSpawn = 0;
+      if (spawnInterval > 350) spawnInterval -= 12;
+      speedMult += 0.01;
+    }
+
+    const dx = player.targetX - player.x;
+    player.x += dx * Math.min(1, 10*dt/1000);
+
+    for (let i = obstacles.length-1; i >=0; i--){
+      const o = obstacles[i];
+      o.y += (o.speed * speedMult) * dt/1000;
+
+      if (o.type === 'circle'){
+        const cx = o.x, cy = o.y, r = o.size/2;
+        const nearestX = Math.max(player.x - player.w/2, Math.min(cx, player.x + player.w/2));
+        const nearestY = Math.max(player.y - player.h/2, Math.min(cy, player.y + player.h/2));
+        const distX = cx - nearestX;
+        const distY = cy - nearestY;
+        if (distX*distX + distY*distY < r*r){
+          endGame(); return;
+        }
+      } else {
+        const left = o.x - o.size/2, right = o.x + o.size/2;
+        const top = o.y - o.size/2, bottom = o.y + o.size/2;
+        const pl = player.x - player.w/2, pr = player.x + player.w/2;
+        const pt = player.y - player.h/2, pb = player.y + player.h/2;
+        if (!(pr < left || pl > right || pb < top || pt > bottom)){
+          endGame(); return;
+        }
+      }
+
+      if (o.y - o.size > H){
+        obstacles.splice(i,1);
+        score += 10;
+        scoreEl.textContent = score;
+      }
+    }
+  }
+
+  function endGame(){
+    gameOver = true;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#fff'; ctx.textAlign='center';
+    ctx.font = '28px Arial'; ctx.fillText('เกมจบ! คะแนน: ' + score, W/2, H/2 - 10);
+    ctx.font = '16px Arial'; ctx.fillText('กด เริ่มใหม่ เพื่อเล่นอีกครั้ง', W/2, H/2 + 24);
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#071025';
+    ctx.fillRect(0,0,W,H);
+
+    for (const o of obstacles){
+      if (o.type === 'circle'){
+        ctx.beginPath(); ctx.arc(o.x,o.y,o.size/2,0,Math.PI*2);
+        ctx.fillStyle = '#fb7185'; ctx.fill();
+      } else {
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(o.x - o.size/2, o.y - o.size/2, o.size, o.size);
+      }
+    }
+
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    const px = player.x - player.w/2, py = player.y - player.h/2;
+    roundRect(ctx, px, py, player.w, player.h, 6);
+    ctx.fill();
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    const rr = r || 4; ctx.beginPath();
+    ctx.moveTo(x+rr,y);
+    ctx.arcTo(x+w,y,x+w,y+h,rr);
+    ctx.arcTo(x+w,y+h,x,y+h,rr);
+    ctx.arcTo(x,y+h,x,y,rr);
+    ctx.arcTo(x,y,x+w,y,rr);
+    ctx.closePath();
+  }
+
+  function loop(ts){
+    if (!lastTime) lastTime = ts;
+    const dt = ts - lastTime; lastTime = ts;
+    update(dt);
+    draw();
+    if (!gameOver) requestAnimationFrame(loop);
+  }
+
+  function clientToCanvas(e){
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    return (clientX - rect.left) * (canvas.width / rect.width);
+  }
+
+  canvas.addEventListener('mousedown', (e)=>{
+    player.dragging = true; player.targetX = clientToCanvas(e);
+  });
+  window.addEventListener('mousemove', (e)=>{ if (player.dragging){ player.targetX = clientToCanvas(e); }});
+  window.addEventListener('mouseup', ()=>{ player.dragging = false; });
+
+  canvas.addEventListener('touchstart', (e)=>{ e.preventDefault(); player.dragging = true; player.targetX = clientToCanvas(e); });
+  canvas.addEventListener('touchmove', (e)=>{ e.preventDefault(); if (player.dragging) player.targetX = clientToCanvas(e); });
+  canvas.addEventListener('touchend', (e)=>{ e.preventDefault(); player.dragging = false; });
+
+  canvas.addEventListener('click', (e)=>{ player.targetX = clientToCanvas(e); });
+
+  restartBtn.addEventListener('click', ()=>{ reset(); });
+
+  reset();
+  </script>
+</body>
+</html>
